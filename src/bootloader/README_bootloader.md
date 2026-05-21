@@ -2,10 +2,10 @@
 
 ## Memory map
 
-- Bootloader: `0x08000000..0x0801FFFF` (128 KiB, flash sector 0).
-- Application: `0x08020000..0x080FFFFF` (896 KiB, flash sectors 1..7).
-- The application must be linked for `0x08020000`; in this project use the
-  `blinker_flash` environment, which uses `system/h745cm7_flash_app.ld`.
+- Bootloader: `0x08000000..0x0801FFFF` (128 KiB, Flash Bank 1 sector 0).
+- Application: `0x08100000..0x081FFFFF` (1024 KiB, Flash Bank 2 sectors 0..7).
+- The application must be linked for `0x08100000`; in this project use the
+  `blinker_flash` environment, which uses `system/h745cm7_flash_bank2_app.ld`.
 
 ## Startup logic
 
@@ -27,12 +27,12 @@ Commands:
 - `0x01 ERASE`
   - Request: `01`
   - Response: `O` or `E`
-  - Erases application sectors 1..7.
+  - Erases application sectors 0..7 in Flash Bank 2.
 
 - `0x02 WRITE`
   - Request: `02 <offset:u32> <length:u32> <data>`
   - Response: `O` or `E`
-  - `offset` is relative to `0x08020000`.
+  - `offset` is relative to `0x08100000`.
   - Data is programmed in 32-byte flash words. The last partial block is padded
     with `0xFF` by the PC uploader.
 

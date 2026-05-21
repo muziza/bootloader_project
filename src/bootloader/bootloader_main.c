@@ -1,10 +1,10 @@
 #include <stdint.h>
 #include "stm32h7xx.h"
 
-#define APP_FLASH_BASE       0x08020000UL
-#define APP_FLASH_END        0x08100000UL
+#define APP_FLASH_BASE       0x08100000UL
+#define APP_FLASH_END        0x08200000UL
 #define APP_FLASH_SIZE       (APP_FLASH_END - APP_FLASH_BASE)
-#define APP_FIRST_SECTOR     1UL
+#define APP_FIRST_SECTOR     0UL
 #define APP_LAST_SECTOR      7UL
 
 #define SRAM_BASE_ADDR       0x20000000UL
@@ -170,26 +170,26 @@ static uint32_t uart_rx_u32(void)
 
 static void flash_wait(void)
 {
-    while ((FLASH->SR1 & (BL_FLASH_SR_BSY | BL_FLASH_SR_QW)) != 0U) {
+    while ((FLASH->SR2 & (BL_FLASH_SR_BSY | BL_FLASH_SR_QW)) != 0U) {
     }
 }
 
 static void flash_unlock(void)
 {
-    if ((FLASH->CR1 & BL_FLASH_CR_LOCK) != 0U) {
-        FLASH->KEYR1 = FLASH_KEY1;
-        FLASH->KEYR1 = FLASH_KEY2;
+    if ((FLASH->CR2 & BL_FLASH_CR_LOCK) != 0U) {
+        FLASH->KEYR2 = FLASH_KEY1;
+        FLASH->KEYR2 = FLASH_KEY2;
     }
 }
 
 static void flash_lock(void)
 {
-    FLASH->CR1 |= BL_FLASH_CR_LOCK;
+    FLASH->CR2 |= BL_FLASH_CR_LOCK;
 }
 
 static void flash_clear_errors(void)
 {
-    FLASH->CCR1 = BL_FLASH_CLEAR_FLAGS;
+    FLASH->CCR2 = BL_FLASH_CLEAR_FLAGS;
 }
 
 static int flash_erase_sector(uint32_t sector)
@@ -200,14 +200,14 @@ static int flash_erase_sector(uint32_t sector)
 
     flash_wait();
     flash_clear_errors();
-    FLASH->CR1 = (FLASH->CR1 & ~BL_FLASH_CR_SNB_Msk) |
+    FLASH->CR2 = (FLASH->CR2 & ~BL_FLASH_CR_SNB_Msk) |
                  BL_FLASH_CR_SER |
                  (sector << BL_FLASH_CR_SNB_Pos);
-    FLASH->CR1 |= BL_FLASH_CR_START;
+    FLASH->CR2 |= BL_FLASH_CR_START;
     flash_wait();
-    FLASH->CR1 &= ~BL_FLASH_CR_SER;
+    FLASH->CR2 &= ~BL_FLASH_CR_SER;
 
-    return ((FLASH->SR1 & BL_FLASH_ERROR_FLAGS) == 0U) ? 0 : -1;
+    return ((FLASH->SR2 & BL_FLASH_ERROR_FLAGS) == 0U) ? 0 : -1;
 }
 
 static int flash_erase_application(void)
@@ -241,7 +241,7 @@ static int flash_write_block(uint32_t address, const uint8_t data[FLASH_WORD_SIZ
 
     flash_wait();
     flash_clear_errors();
-    FLASH->CR1 |= BL_FLASH_CR_PG;
+    FLASH->CR2 |= BL_FLASH_CR_PG;
 
     for (uint32_t i = 0; i < FLASH_WORD_SIZE; i += 4U) {
         *(volatile uint32_t *)(address + i) =
@@ -253,7 +253,7 @@ static int flash_write_block(uint32_t address, const uint8_t data[FLASH_WORD_SIZ
     }
 
     flash_wait();
-    FLASH->CR1 &= ~BL_FLASH_CR_PG;
+    FLASH->CR2 &= ~BL_FLASH_CR_PG;
 
     for (uint32_t i = 0; i < FLASH_WORD_SIZE; ++i) {
         if (*(volatile uint8_t *)(address + i) != data[i]) {
@@ -261,7 +261,7 @@ static int flash_write_block(uint32_t address, const uint8_t data[FLASH_WORD_SIZ
         }
     }
 
-    return ((FLASH->SR1 & BL_FLASH_ERROR_FLAGS) == 0U) ? 0 : -1;
+    return ((FLASH->SR2 & BL_FLASH_ERROR_FLAGS) == 0U) ? 0 : -1;
 }
 
 static uint8_t stack_in_ram(uint32_t stack)
