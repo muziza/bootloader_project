@@ -21,6 +21,8 @@ All multibyte fields are little-endian. Responses are one byte:
 - `O`: command accepted.
 - `E`: command failed.
 - `?`: unknown command.
+- `D <code:u8> <value:u32>`: diagnostic event. The Python uploader prints it
+  and keeps waiting for `O` or `E`.
 
 Commands:
 
@@ -31,10 +33,11 @@ Commands:
 
 - `0x02 WRITE`
   - Request: `02 <offset:u32> <length:u32> <data>`
-  - Response: `O` or `E`
+  - Response: `O` after a valid header, then `O` after every accepted 32-byte
+    flash word, or `E` on the first failed step.
   - `offset` is relative to `0x08100000`.
-  - Data is programmed in 32-byte flash words. The last partial block is padded
-    with `0xFF` by the PC uploader.
+  - The PC sends exactly `length` bytes. The bootloader pads the last partial
+    32-byte flash word with `0xFF` before programming it.
 
 - `0x03 READ`
   - Request: `03 <offset:u32> <length:u32>`
@@ -43,6 +46,12 @@ Commands:
 - `0x04 JUMP`
   - Request: `04`
   - Response: `O` then software jump, or `E` if no valid application exists.
+
+- `0x05 INFO`
+  - Request: `05`
+  - Response: `I <version:u32> <app_base:u32> <app_end:u32> <flash_sr2:u32>`
+  - Used by the PC uploader to confirm that the expected Bank 2 bootloader is
+    actually running on the board.
 
 ## Upload example
 

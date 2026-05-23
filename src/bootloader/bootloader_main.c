@@ -14,15 +14,34 @@
 
 #define UART_BAUDRATE        115200UL
 #define FLASH_WORD_SIZE      32UL
+#define FLASH_WAIT_TIMEOUT   10000000UL
+#define BOOTLOADER_VERSION   0x00040000UL
 
 #define CMD_ERASE            0x01U
 #define CMD_WRITE            0x02U
 #define CMD_READ             0x03U
 #define CMD_JUMP             0x04U
+#define CMD_INFO             0x05U
 
 #define ACK_OK               'O'
 #define ACK_ERROR            'E'
 #define ACK_UNKNOWN          '?'
+#define ACK_INFO             'I'
+#define DBG_MARKER           'D'
+#define DBG_WRITE_HEADER     0x10U
+#define DBG_WRITE_BLOCK      0x11U
+#define DBG_COMMAND          0x12U // 
+#define DBG_FLASH_ADDR       0x20U
+#define DBG_FLASH_PG_SET     0x21U
+#define DBG_FLASH_STORE_DONE 0x22U
+#define DBG_FLASH_DONE       0x23U
+#define DBG_FLASH_ADDR_ERR   0xE0U
+#define DBG_FLASH_WAIT_ERR   0xE1U
+#define DBG_FLASH_VERIFY_ERR 0xE2U
+#define DBG_FLASH_FLAGS_ERR  0xE3U
+#define DBG_HARDFAULT        0xF0U
+#define DBG_MEMFAULT         0xF1U
+#define DBG_BUSFAULT         0xF2U
 
 #define GPIO_MODE_INPUT      0x0UL
 #define GPIO_MODE_OUTPUT     0x1UL
@@ -65,6 +84,7 @@ static void cmd_erase(void);
 static void cmd_write(void);
 static void cmd_read(void);
 static void cmd_jump(void);
+static void cmd_info(void);
 static int flash_erase_application(void);
 static int flash_write_block(uint32_t address, const uint8_t data[FLASH_WORD_SIZE]);
 static int app_is_valid(void);
@@ -152,6 +172,21 @@ static void uart_write(const uint8_t *data, uint32_t length)
     }
 }
 
+static void uart_tx_u32(uint32_t value)
+{
+    uart_tx((uint8_t)(value & 0xFFU));
+    uart_tx((uint8_t)((value >> 8) & 0xFFU));
+    uart_tx((uint8_t)((value >> 16) & 0xFFU));
+    uart_tx((uint8_t)((value >> 24) & 0xFFU));
+}
+
+static void debug_send(uint8_t code, uint32_t value)
+{
+    uart_tx(DBG_MARKER);
+    uart_tx(code);
+    uart_tx_u32(value);
+}
+
 static void uart_puts(const char *text)
 {
     while (*text != '\0') {
@@ -168,10 +203,17 @@ static uint32_t uart_rx_u32(void)
     return value;
 }
 
-static void flash_wait(void)
+static int flash_wait(void)
 {
+    uint32_t timeout = FLASH_WAIT_TIMEOUT;
+
     while ((FLASH->SR2 & (BL_FLASH_SR_BSY | BL_FLASH_SR_QW)) != 0U) {
+        if (timeout-- == 0U) {
+            return -1;
+        }
     }
+
+    return 0;
 }
 
 static void flash_unlock(void)
@@ -198,13 +240,21 @@ static int flash_erase_sector(uint32_t sector)
         return -1;
     }
 
-    flash_wait();
+    if (flash_wait() != 0) {
+        return -1;
+    }
+
     flash_clear_errors();
     FLASH->CR2 = (FLASH->CR2 & ~BL_FLASH_CR_SNB_Msk) |
                  BL_FLASH_CR_SER |
                  (sector << BL_FLASH_CR_SNB_Pos);
     FLASH->CR2 |= BL_FLASH_CR_START;
-    flash_wait();
+
+    if (flash_wait() != 0) {
+        FLASH->CR2 &= ~BL_FLASH_CR_SER;
+        return -1;
+    }
+
     FLASH->CR2 &= ~BL_FLASH_CR_SER;
 
     return ((FLASH->SR2 & BL_FLASH_ERROR_FLAGS) == 0U) ? 0 : -1;
@@ -239,9 +289,16 @@ static int flash_write_block(uint32_t address, const uint8_t data[FLASH_WORD_SIZ
         return -1;
     }
 
-    flash_wait();
+    debug_send(DBG_FLASH_ADDR, address);
+
+    if (flash_wait() != 0) {
+        debug_send(DBG_FLASH_WAIT_ERR, FLASH->SR2);
+        return -1;
+    }
+
     flash_clear_errors();
     FLASH->CR2 |= BL_FLASH_CR_PG;
+    debug_send(DBG_FLASH_PG_SET, FLASH->CR2);
 
     for (uint32_t i = 0; i < FLASH_WORD_SIZE; i += 4U) {
         *(volatile uint32_t *)(address + i) =
@@ -251,17 +308,30 @@ static int flash_write_block(uint32_t address, const uint8_t data[FLASH_WORD_SIZ
             ((uint32_t)data[i + 3U] << 24);
         __DSB();
     }
+    debug_send(DBG_FLASH_STORE_DONE, FLASH->SR2);
 
-    flash_wait();
+    if (flash_wait() != 0) {
+        FLASH->CR2 &= ~BL_FLASH_CR_PG;
+        debug_send(DBG_FLASH_WAIT_ERR, FLASH->SR2);
+        return -1;
+    }
+
     FLASH->CR2 &= ~BL_FLASH_CR_PG;
 
     for (uint32_t i = 0; i < FLASH_WORD_SIZE; ++i) {
         if (*(volatile uint8_t *)(address + i) != data[i]) {
+            debug_send(DBG_FLASH_VERIFY_ERR, address + i);
             return -1;
         }
     }
 
-    return ((FLASH->SR2 & BL_FLASH_ERROR_FLAGS) == 0U) ? 0 : -1;
+    if ((FLASH->SR2 & BL_FLASH_ERROR_FLAGS) != 0U) {
+        debug_send(DBG_FLASH_FLAGS_ERR, FLASH->SR2);
+        return -1;
+    }
+
+    debug_send(DBG_FLASH_DONE, address);
+    return 0;
 }
 
 static uint8_t stack_in_ram(uint32_t stack)
@@ -326,23 +396,39 @@ static void jump_to_application(void)
 
 static void cmd_erase(void)
 {
+    debug_send(DBG_FLASH_DONE, APP_FLASH_BASE);
     uart_tx((flash_erase_application() == 0) ? ACK_OK : ACK_ERROR);
 }
 
 static void cmd_write(void)
 {
+    debug_send(DBG_WRITE_HEADER, 0xFFFFFFFFUL);
+    uart_tx(ACK_OK);
+
     uint32_t offset = uart_rx_u32();
     uint32_t length = uart_rx_u32();
     uint32_t address = APP_FLASH_BASE + offset;
     uint8_t block[FLASH_WORD_SIZE];
     int status = 0;
 
+    debug_send(DBG_WRITE_HEADER, length);
+
     if ((offset >= APP_FLASH_SIZE) || (length > (APP_FLASH_SIZE - offset))) {
         status = -1;
+        debug_send(DBG_FLASH_ADDR_ERR, offset);
     }
 
     __disable_irq();
     flash_unlock();
+
+    if (status != 0) {
+        flash_lock();
+        __enable_irq();
+        uart_tx(ACK_ERROR);
+        return;
+    }
+
+    uart_tx(ACK_OK);
 
     for (uint32_t written = 0; written < length; written += FLASH_WORD_SIZE) {
         for (uint32_t i = 0; i < FLASH_WORD_SIZE; ++i) {
@@ -353,20 +439,53 @@ static void cmd_write(void)
             }
         }
 
+        debug_send(DBG_WRITE_BLOCK, written);
+
         if ((status == 0) && (flash_write_block(address + written, block) != 0)) {
             status = -1;
         }
+
+        if (status != 0) {
+            uart_tx(ACK_ERROR);
+            break;
+        }
+
+        uart_tx(ACK_OK);
     }
 
     flash_lock();
     __enable_irq();
     SCB_InvalidateICache();
+}
 
-    uart_tx((status == 0) ? ACK_OK : ACK_ERROR);
+void HardFault_Handler(void)
+{
+    debug_send(DBG_HARDFAULT, SCB->CFSR);
+    uart_tx(ACK_ERROR);
+    while (1) {
+    }
+}
+
+void MemManage_Handler(void)
+{
+    debug_send(DBG_MEMFAULT, SCB->CFSR);
+    uart_tx(ACK_ERROR);
+    while (1) {
+    }
+}
+
+void BusFault_Handler(void)
+{
+    debug_send(DBG_BUSFAULT, SCB->CFSR);
+    uart_tx(ACK_ERROR);
+    while (1) {
+    }
 }
 
 static void cmd_read(void)
 {
+    uart_tx(ACK_OK);
+
     uint32_t offset = uart_rx_u32();
     uint32_t length = uart_rx_u32();
 
@@ -392,8 +511,20 @@ static void cmd_jump(void)
     jump_to_application();
 }
 
+static void cmd_info(void)
+{
+    uart_tx(ACK_INFO);
+    // uart_tx(ACK_OK);
+    uart_tx_u32(BOOTLOADER_VERSION);
+    uart_tx_u32(APP_FLASH_BASE);
+    uart_tx_u32(APP_FLASH_END);
+    uart_tx_u32(FLASH->SR2);
+}
+
 static void process_command(uint8_t cmd)
 {
+    debug_send(DBG_COMMAND, cmd);
+
     switch (cmd) {
     case CMD_ERASE:
         cmd_erase();
@@ -406,6 +537,9 @@ static void process_command(uint8_t cmd)
         break;
     case CMD_JUMP:
         cmd_jump();
+        break;
+    case CMD_INFO:
+        cmd_info();
         break;
     default:
         uart_tx(ACK_UNKNOWN);
