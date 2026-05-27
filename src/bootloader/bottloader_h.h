@@ -1,6 +1,7 @@
 #ifndef  __STM32H745xx_H__
 #define  __STM32H745xx_H__
 #include <stdint.h>
+#include <stdio.h>
 
 
 #define GPIOB_BASE (0x58020400U)

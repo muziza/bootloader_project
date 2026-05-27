@@ -102,7 +102,7 @@ static void gpio_set_mode(GPIO_TypeDef *port, uint32_t pin, uint32_t mode)
     port->MODER = (port->MODER & ~(3UL << (pin * 2UL))) | (mode << (pin * 2UL));
 }
 
-static void gpio_init(void)
+static void gpio_init(void) // EXCEPTION
 {
     RCC->AHB4ENR |= RCC_AHB4ENR_GPIOCEN | RCC_AHB4ENR_GPIODEN | RCC_AHB4ENR_GPIOEEN;
     (void)RCC->AHB4ENR;
@@ -119,7 +119,7 @@ static void gpio_init(void)
                    (7UL << 0) | (7UL << 4);
 }
 
-static uint8_t button_pressed(void)
+static uint8_t button_pressed(void) // EXCEPTION
 {
     return ((BUTTON_PORT->IDR & (1UL << BUTTON_PIN)) == 0U) ? 1U : 0U;
 }
@@ -385,11 +385,13 @@ static void jump_to_application(void)
     }
 
     SCB->VTOR = APP_FLASH_BASE;
-    SCB_CleanInvalidateDCache();
+    // SCB_CleanInvalidateDCache(); // blocked
     SCB_InvalidateICache();
     __set_MSP(stack);
-    __DSB();
-    __ISB();
+    // __DSB();
+    // __ISB();
+    __ASM volatile("bx %0" ::"r"(entry));
+
 
     reset_handler();
 }
@@ -569,9 +571,19 @@ int main(void)
     gpio_init();
     uart3_init();
 
-    if ((button_pressed() == 0U) && (app_is_valid() != 0)) {
+    if ((button_pressed() == 0U) && app_is_valid()) {
         jump_to_application();
     }
 
-    bootloader_mode();
+    if (button_pressed()) {
+        bootloader_mode();
+    }
+
+    putchar("END");
+
+    while (1)
+    {
+        /* code */
+    }
+    
 }
