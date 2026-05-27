@@ -55,13 +55,12 @@ def wait_ack(ser, stage):
             raise RuntimeError(f"{stage}: bootloader returned error")
         if not response:
             raise RuntimeError(f"{stage}: timeout waiting for ACK")
-        raise RuntimeError(f"{stage}: (wait_ack) unexpected response {response!r}")
+        raise RuntimeError(f"{stage}: unexpected response {response!r}")
 
 
 def read_response_byte(ser, stage):
     while True:
         response = ser.read(1)
-        print(f"    [DBG] {response}")
         if response != DBG_MARKER:
             return response
 
@@ -87,9 +86,8 @@ def read_info(ser):
     response = read_response_byte(ser, "info")
     if response == b"?":
         raise RuntimeError("info: bootloader does not support INFO command; old bootloader is probably running")
-    if response != b"I":
-        raise RuntimeError(f"info (response_i): unexpected response {response}")
-    print(f"(read) info: unexpected response {response}")
+    if response != ACK_INFO:
+        raise RuntimeError(f"info: unexpected response {response!r}")
 
     payload = ser.read(16)
     if len(payload) != 16:
@@ -128,19 +126,8 @@ def write_firmware(ser, firmware):
     print(f"[+] End write {len(firmware)} bytes")
 
 
-# def read_firmware(ser, size):
-#     print(f"[+] Start read back {size} bytes")
-#     ser.write(bytes([CMD_READ]) + u32le(0) + u32le(size))
-#     wait_ack(ser, "read")
-
-#     data = ser.read(size)
-#     if len(data) != size:
-#         raise RuntimeError(f"read: expected {size} bytes, got {len(data)}")
-#     return data
-
-
 def read_firmware(ser, size):
-    print(f"[+] Read (back) command")
+    print(f"[+] Read back {size} bytes")
     ser.write(bytes([CMD_READ]))
     wait_ack(ser, "read command")
 

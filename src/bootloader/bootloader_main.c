@@ -30,7 +30,7 @@
 #define DBG_MARKER           'D'
 #define DBG_WRITE_HEADER     0x10U
 #define DBG_WRITE_BLOCK      0x11U
-#define DBG_COMMAND          0x12U // 
+#define DBG_COMMAND          0x12U
 #define DBG_FLASH_ADDR       0x20U
 #define DBG_FLASH_PG_SET     0x21U
 #define DBG_FLASH_STORE_DONE 0x22U
@@ -102,7 +102,7 @@ static void gpio_set_mode(GPIO_TypeDef *port, uint32_t pin, uint32_t mode)
     port->MODER = (port->MODER & ~(3UL << (pin * 2UL))) | (mode << (pin * 2UL));
 }
 
-static void gpio_init(void) // EXCEPTION
+static void gpio_init(void)
 {
     RCC->AHB4ENR |= RCC_AHB4ENR_GPIOCEN | RCC_AHB4ENR_GPIODEN | RCC_AHB4ENR_GPIOEEN;
     (void)RCC->AHB4ENR;
@@ -119,7 +119,7 @@ static void gpio_init(void) // EXCEPTION
                    (7UL << 0) | (7UL << 4);
 }
 
-static uint8_t button_pressed(void) // EXCEPTION
+static uint8_t button_pressed(void)
 {
     return ((BUTTON_PORT->IDR & (1UL << BUTTON_PIN)) == 0U) ? 1U : 0U;
 }
@@ -384,21 +384,16 @@ static void jump_to_application(void)
         NVIC->ICPR[i] = 0xFFFFFFFFUL;
     }
 
-    SCB->VTOR = APP_FLASH_BASE;
-    // SCB_CleanInvalidateDCache(); // blocked
     SCB_InvalidateICache();
+    SCB->VTOR = APP_FLASH_BASE;
     __set_MSP(stack);
-    // __DSB();
-    // __ISB();
-    __ASM volatile("bx %0" ::"r"(entry));
-
-
+    __DSB();
+    __ISB();
     reset_handler();
 }
 
 static void cmd_erase(void)
 {
-    debug_send(DBG_FLASH_DONE, APP_FLASH_BASE);
     uart_tx((flash_erase_application() == 0) ? ACK_OK : ACK_ERROR);
 }
 
@@ -516,7 +511,6 @@ static void cmd_jump(void)
 static void cmd_info(void)
 {
     uart_tx(ACK_INFO);
-    // uart_tx(ACK_OK);
     uart_tx_u32(BOOTLOADER_VERSION);
     uart_tx_u32(APP_FLASH_BASE);
     uart_tx_u32(APP_FLASH_END);
@@ -571,19 +565,9 @@ int main(void)
     gpio_init();
     uart3_init();
 
-    if ((button_pressed() == 0U) && app_is_valid()) {
+    if ((button_pressed() == 0U) && (app_is_valid() != 0)) {
         jump_to_application();
     }
 
-    if (button_pressed()) {
-        bootloader_mode();
-    }
-
-    putchar("END");
-
-    while (1)
-    {
-        /* code */
-    }
-    
+    bootloader_mode();
 }
