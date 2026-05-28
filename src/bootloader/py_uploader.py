@@ -74,6 +74,22 @@ def read_info(ser):
         raise RuntimeError("info: bootloader is not configured for Flash Bank 2 application area")
 
 
+# def write_firmware(ser, firmware):
+#     print(f"[+] Start write (command)")
+#     ser.write(bytes([CMD_WRITE]))
+#     wait_ack(ser, "write command")
+
+#     print(f"[+] Start write (header)")
+#     ser.write(u32le(0) + u32le(len(firmware)))
+#     wait_ack(ser, "write header")
+
+#     print(f"[+] Start write (app) {len(firmware)} bytes")
+#     for offset in range(0, len(firmware), BLOCK_SIZE):
+#         ser.write(firmware[offset : offset + BLOCK_SIZE])
+#         wait_ack(ser, f"write block at offset {offset}")
+
+#     print(f"[+] End write {len(firmware)} bytes")
+
 def write_firmware(ser, firmware):
     print(f"[+] Start write (command)")
     ser.write(bytes([CMD_WRITE]))
@@ -84,24 +100,51 @@ def write_firmware(ser, firmware):
     wait_ack(ser, "write header")
 
     print(f"[+] Start write (app) {len(firmware)} bytes")
+
     for offset in range(0, len(firmware), BLOCK_SIZE):
-        ser.write(firmware[offset : offset + BLOCK_SIZE])
+        block = firmware[offset:offset + BLOCK_SIZE]
+
+        ser.write(block)
+
         wait_ack(ser, f"write block at offset {offset}")
+
+        if offset % (BLOCK_SIZE * 8) == 0:
+            print(f"     {offset:04X}: {block[:8].hex()}")
 
     print(f"[+] End write {len(firmware)} bytes")
 
 
-def read_firmware(ser, size):
+# def read_firmware(ser, size):
+#     print(f"[+] Read back {size} bytes")
+#     ser.write(bytes([CMD_READ]))
+#     wait_ack(ser, "read command")
+
+#     ser.write(u32le(0) + u32le(size))
+#     wait_ack(ser, "read header")
+
+#     data = ser.read(size)
+#     if len(data) != size:
+#         raise RuntimeError(f"read: expected {size} bytes, got {len(data)}")
+#     return data
+
+def read_firmware(ser, size, step=BLOCK_SIZE * 8):
     print(f"[+] Read back {size} bytes")
     ser.write(bytes([CMD_READ]))
     wait_ack(ser, "read command")
 
+    print(f"[+] Read (back) header")
     ser.write(u32le(0) + u32le(size))
     wait_ack(ser, "read header")
 
     data = ser.read(size)
     if len(data) != size:
         raise RuntimeError(f"read: expected {size} bytes, got {len(data)}")
+
+    print("[+] Sample dump:")
+    for i in range(0, size, step):
+        chunk = data[i:i+step]
+        print(f"     {i:04X}: {chunk[:8].hex()} ...")
+
     return data
 
 
