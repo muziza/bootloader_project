@@ -143,7 +143,7 @@ def read_firmware(ser, size, step=BLOCK_SIZE * 8):
     print("[+] Sample dump:")
     for i in range(0, size, step):
         chunk = data[i:i+step]
-        print(f"     {i:04X}: {chunk[:8].hex()} ...")
+        print(f"     {i:04X}: {chunk[:8].hex()}")
 
     return data
 
