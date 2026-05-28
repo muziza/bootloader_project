@@ -14,25 +14,7 @@ ACK_OK = b"O"
 ACK_ERROR = b"E"
 ACK_INFO = b"I"
 ACK_UNKNOWN = b"?"
-DBG_MARKER = b"D"
 BLOCK_SIZE = 32
-
-DEBUG_NAMES = {
-    0x10: "WRITE header received, length",
-    0x11: "WRITE block offset",
-    0x12: "Command byte received",
-    0x20: "FLASH write address",
-    0x21: "FLASH PG set, CR2",
-    0x22: "FLASH store loop done, SR2",
-    0x23: "FLASH write done, address",
-    0xE0: "FLASH address/range error",
-    0xE1: "FLASH wait timeout, SR2",
-    0xE2: "FLASH verify error address",
-    0xE3: "FLASH error flags, SR2",
-    0xF0: "HardFault, CFSR",
-    0xF1: "MemManage fault, CFSR",
-    0xF2: "BusFault, CFSR",
-}
 
 
 def u32le(value):
@@ -47,31 +29,14 @@ def u32le(value):
 
 
 def wait_ack(ser, stage):
-    while True:
-        response = read_response_byte(ser, stage)
-        if response == ACK_OK:
-            return
-        if response == ACK_ERROR:
-            raise RuntimeError(f"{stage}: bootloader returned error")
-        if not response:
-            raise RuntimeError(f"{stage}: timeout waiting for ACK")
-        raise RuntimeError(f"{stage}: unexpected response {response!r}")
-
-
-def read_response_byte(ser, stage):
-    while True:
-        response = ser.read(1)
-        if response != DBG_MARKER:
-            return response
-
-        payload = ser.read(5)
-        if len(payload) != 5:
-            raise RuntimeError(f"{stage}: incomplete debug packet {payload!r}")
-
-        code = payload[0]
-        value = int.from_bytes(payload[1:5], "little")
-        name = DEBUG_NAMES.get(code, f"debug 0x{code:02X}")
-        print(f"    [DBG] {name}: 0x{value:08X} ({value})")
+    response = ser.read(1)
+    if response == ACK_OK:
+        return
+    if response == ACK_ERROR:
+        raise RuntimeError(f"{stage}: bootloader returned error")
+    if not response:
+        raise RuntimeError(f"{stage}: timeout waiting for ACK")
+    raise RuntimeError(f"{stage}: unexpected response {response!r}")
 
 
 def erase(ser):
@@ -83,7 +48,7 @@ def erase(ser):
 def read_info(ser):
     print("[+] Read bootloader info")
     ser.write(bytes([CMD_INFO]))
-    response = read_response_byte(ser, "info")
+    response = ser.read(1)
     if response == b"?":
         raise RuntimeError("info: bootloader does not support INFO command; old bootloader is probably running")
     if response != ACK_INFO:
@@ -102,8 +67,8 @@ def read_info(ser):
     print(f"[+] Application area:  0x{app_base:08X}..0x{app_end - 1:08X}")
     print(f"[+] FLASH SR2:         0x{sr2:08X}")
 
-    if version != 0x00040000:
-        raise RuntimeError("info: bootloader version is not 0x00040000; please rebuild and upload the latest bootloader")
+    if version != 0x00050000:
+        raise RuntimeError("info: bootloader version is not 0x00050000; please rebuild and upload the latest bootloader")
 
     if app_base != 0x08100000 or app_end != 0x08200000:
         raise RuntimeError("info: bootloader is not configured for Flash Bank 2 application area")
@@ -131,7 +96,6 @@ def read_firmware(ser, size):
     ser.write(bytes([CMD_READ]))
     wait_ack(ser, "read command")
 
-    print(f"[+] Read (back) header")
     ser.write(u32le(0) + u32le(size))
     wait_ack(ser, "read header")
 

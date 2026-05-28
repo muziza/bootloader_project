@@ -10,6 +10,6 @@ static void delay(int ms) {
 int main() {
     led_enable(led_all);
     while(1){
-      led_toggle(led_yellow); delay(300);
+      led_toggle(led_yellow); delay(30);
     };
 }

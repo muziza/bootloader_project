@@ -21,8 +21,6 @@ All multibyte fields are little-endian. Responses are one byte:
 - `O`: command accepted.
 - `E`: command failed.
 - `?`: unknown command.
-- `D <code:u8> <value:u32>`: diagnostic event. The Python uploader prints it
-  and keeps waiting for `O` or `E`.
 
 Commands:
 

@@ -1,3 +1,4 @@
 .pio
 .vscode
 bootloader_changelog.md
+src/bootloader/__pycache__/
